@@ -1,0 +1,1 @@
+curl -ksSL https://gitlab.example.com/path/to/setup-ansible-user.sh | bash
