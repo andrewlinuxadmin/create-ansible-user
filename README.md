@@ -222,7 +222,8 @@ bash-ansible-user/
 ├── setup-ansible-user.sh      # Script principal (setup)
 ├── rollback-ansible-user.sh   # Script de rollback (desfaz tudo)
 ├── README.md                  # Esta documentação
-└── FAQ.md                     # Perguntas frequentes e guia de resolução de erros
+├── FAQ.md                     # Perguntas frequentes e guia de resolução de erros
+└── LICENSE.md                 # Licença GPL v3
 ```
 
 ## Arquivos criados/modificados no servidor alvo
