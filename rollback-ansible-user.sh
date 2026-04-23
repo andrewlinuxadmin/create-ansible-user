@@ -3,9 +3,11 @@
 # rollback-ansible-user.sh — Remove o usuário "ansible" e reverte todas as
 #                             configurações aplicadas pelo setup-ansible-user.sh
 #
-# Uso: sudo bash rollback-ansible-user.sh [--force]
+# Uso:
+#   sudo bash rollback-ansible-user.sh [--force]
+#   curl -ksSL URL/rollback-ansible-user.sh | bash -s -- --force
 #
-#   --force   Executa sem pedir confirmação
+#   --force   Executa sem pedir confirmação (obrigatório via curl | bash)
 #
 # ============================================================================
 set -euo pipefail
@@ -57,6 +59,13 @@ confirm() {
     if [[ $FORCE -eq 1 ]]; then
         return 0
     fi
+
+    if [[ ! -t 0 ]]; then
+        err "Execução via pipe detectada (curl | bash). Use --force para pular a confirmação:"
+        err "  curl -ksSL URL/rollback-ansible-user.sh | bash -s -- --force"
+        exit 1
+    fi
+
     printf '\n'
     printf '  ╔══════════════════════════════════════════════════════════════╗\n'
     printf '  ║  ATENÇÃO: Este script irá REMOVER completamente:           ║\n'
