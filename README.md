@@ -63,6 +63,8 @@ DISTRO_MODE="rhel_only"
 | `DISTRO_MODE` | Não | `rhel_only` (padrão) ou `rhel_like` |
 | `ANSIBLE_USER` | Não | Nome do usuário (padrão: `ansible`) |
 | `PASSWORD_LENGTH` | Não | Tamanho da senha aleatória (padrão: `64`) |
+| `ANSIBLE_UID_MIN` | Não | Início da faixa de UID (padrão: `900`) |
+| `ANSIBLE_UID_MAX` | Não | Fim da faixa de UID (padrão: `910`) |
 
 ## O que o script faz
 
@@ -73,7 +75,7 @@ O script executa as etapas abaixo, nesta ordem:
 | 1 | **Escalação de privilégios** | Detecta se é `root`. Se não for, verifica se tem `sudo` e o utiliza automaticamente. |
 | 2 | **Detecção de Python** | Localiza `python3`, `/usr/libexec/platform-python`, `python2` ou `python` (usado como fallback para geração de senha). |
 | 3 | **Verificação do SO** | Confirma que é RHEL 7+ via `/etc/os-release`. |
-| 4 | **Criação do usuário** | Cria o usuário `ansible` com senha aleatória de 64 caracteres (letras, números e símbolos). **Bloqueia login por senha** (`passwd -l`). |
+| 4 | **Criação do usuário** | Cria o usuário `ansible` como conta de sistema com UID na faixa 900-910 (primeiro livre), senha aleatória de 64 caracteres. **Bloqueia login por senha** (`passwd -l`). |
 | 5 | **Configuração SSH** | Cria `~ansible/.ssh/` (0700) e `authorized_keys` (0600). Instala a chave pública. Restaura contextos SELinux. |
 | 6 | **Configuração sshd** | Adiciona bloco `Match User ansible` via drop-in (RHEL 8+) ou diretamente no `sshd_config` (RHEL 7, com backup). Valida com `sshd -t` e recarrega o serviço. |
 | 7 | **Configuração sudo** | Cria `/etc/sudoers.d/ansible` com `NOPASSWD: ALL` e `!requiretty`. Valida com `visudo -cf`. |
@@ -149,6 +151,7 @@ SAU = **S**etup **A**nsible **U**ser
 | **SAU-203** | Sistema | Versão do RHEL inferior a 7 |
 | **SAU-301** | Senha | Falha ao gerar senha aleatória |
 | **SAU-302** | Senha | Falha ao gerar hash SHA-512 da senha |
+| **SAU-403** | Usuário | Nenhum UID livre na faixa configurada (`ANSIBLE_UID_MIN`-`ANSIBLE_UID_MAX`) |
 | **SAU-401** | SSH | Chave pública não configurada no script |
 | **SAU-501** | SSHD | Configuração do sshd inválida (`sshd -t` falhou) |
 | **SAU-601** | Sudoers | Arquivo sudoers inválido (`visudo -cf` falhou) |
@@ -167,26 +170,48 @@ Formato da mensagem de erro exibida ao usuário:
 
 Para a descrição detalhada de cada código com causas e soluções, consulte o [FAQ](FAQ.md).
 
-## Como desfazer
+## Como desfazer (rollback)
 
-Para remover completamente as alterações feitas pelo script:
+Use o script `rollback-ansible-user.sh` para reverter **todas** as alterações feitas pelo setup:
 
 ```bash
-# 1. Remover proteção imutável
+# Execução local (com confirmação interativa)
+sudo bash rollback-ansible-user.sh
+
+# Execução via curl | bash (requer --force)
+curl -ksSL https://gitlab.exemplo.com.br/setic/rollback-ansible-user.sh | bash -s -- --force
+```
+
+### O que o rollback remove
+
+| # | Ação |
+|---|------|
+| 1 | Remove a flag imutável (`chattr -i`) do `authorized_keys` |
+| 2 | Remove o arquivo sudoers (`/etc/sudoers.d/ansible`) |
+| 3 | Remove a configuração SSH — drop-in (`99-ansible-user.conf`) ou bloco `Match` no `sshd_config` |
+| 4 | Valida a configuração do sshd (`sshd -t`) e recarrega o serviço |
+| 5 | Encerra processos do usuário `ansible` (se houver) |
+| 6 | Remove o usuário e o diretório home (`/home/ansible`) |
+
+### Opções
+
+| Flag | Descrição |
+|------|-----------|
+| `--force` | Executa sem pedir confirmação (obrigatório quando executado via `curl \| bash`) |
+
+> **Nota:** Quando executado via pipe (`curl | bash`), o script detecta que stdin não é um
+> terminal e exige `--force` para evitar que trave no prompt de confirmação.
+
+### Rollback manual
+
+Caso prefira desfazer manualmente:
+
+```bash
 chattr -i /home/ansible/.ssh/authorized_keys
-
-# 2. Remover o usuário e home
 userdel -r ansible
-
-# 3. Remover sudoers
 rm -f /etc/sudoers.d/ansible
-
-# 4. Remover configuração sshd
-# RHEL 8+:
-rm -f /etc/ssh/sshd_config.d/99-ansible-user.conf
+rm -f /etc/ssh/sshd_config.d/99-ansible-user.conf   # RHEL 8+
 # RHEL 7: remova o bloco entre "# BEGIN ansible-user-config" e "# END ansible-user-config"
-
-# 5. Recarregar sshd
 systemctl reload sshd
 ```
 
@@ -194,9 +219,10 @@ systemctl reload sshd
 
 ```
 bash-ansible-user/
-├── setup-ansible-user.sh   # Script principal
-├── README.md               # Esta documentação
-└── FAQ.md                  # Perguntas frequentes e guia de resolução de erros
+├── setup-ansible-user.sh      # Script principal (setup)
+├── rollback-ansible-user.sh   # Script de rollback (desfaz tudo)
+├── README.md                  # Esta documentação
+└── FAQ.md                     # Perguntas frequentes e guia de resolução de erros
 ```
 
 ## Arquivos criados/modificados no servidor alvo
