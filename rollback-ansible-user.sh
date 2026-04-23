@@ -140,29 +140,31 @@ rollback_sshd() {
 }
 
 rollback_user() {
-    if ! id "${ANSIBLE_USER}" &>/dev/null; then
-        log "Usuário '${ANSIBLE_USER}' não existe. Nada a fazer."
-        return 0
-    fi
-
-    local processes
-    processes=$(ps -u "${ANSIBLE_USER}" -o pid= 2>/dev/null || true)
-    if [[ -n "${processes}" ]]; then
-        warn "Encerrando processos do usuário '${ANSIBLE_USER}'..."
-        ${SUDO} pkill -u "${ANSIBLE_USER}" 2>/dev/null || true
-        sleep 2
-        ${SUDO} pkill -9 -u "${ANSIBLE_USER}" 2>/dev/null || true
-    fi
-
-    log "Removendo usuário '${ANSIBLE_USER}' e diretório home..."
-    ${SUDO} userdel -r "${ANSIBLE_USER}" 2>/dev/null || {
-        warn "userdel -r falhou. Removendo manualmente..."
-        ${SUDO} userdel "${ANSIBLE_USER}" 2>/dev/null || true
-        if [[ -d "${ANSIBLE_HOME}" ]]; then
-            ${SUDO} rm -rf "${ANSIBLE_HOME}"
+    if id "${ANSIBLE_USER}" &>/dev/null; then
+        local processes
+        processes=$(ps -u "${ANSIBLE_USER}" -o pid= 2>/dev/null || true)
+        if [[ -n "${processes}" ]]; then
+            warn "Encerrando processos do usuário '${ANSIBLE_USER}'..."
+            ${SUDO} pkill -u "${ANSIBLE_USER}" 2>/dev/null || true
+            sleep 2
+            ${SUDO} pkill -9 -u "${ANSIBLE_USER}" 2>/dev/null || true
         fi
-    }
-    log "Usuário '${ANSIBLE_USER}' removido."
+
+        log "Removendo usuário '${ANSIBLE_USER}'..."
+        ${SUDO} userdel -r "${ANSIBLE_USER}" 2>/dev/null || {
+            warn "userdel -r falhou. Removendo usuário sem home..."
+            ${SUDO} userdel "${ANSIBLE_USER}" 2>/dev/null || true
+        }
+        log "Usuário '${ANSIBLE_USER}' removido."
+    else
+        log "Usuário '${ANSIBLE_USER}' não existe."
+    fi
+
+    if [[ -d "${ANSIBLE_HOME}" ]]; then
+        log "Removendo diretório home residual: ${ANSIBLE_HOME}"
+        ${SUDO} rm -rf "${ANSIBLE_HOME}"
+        log "Diretório ${ANSIBLE_HOME} removido."
+    fi
 }
 
 restore_sshd_backup() {
