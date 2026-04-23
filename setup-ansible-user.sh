@@ -16,6 +16,7 @@
 #   SAU-203  | Versão do RHEL inferior a 7
 #   SAU-301  | Falha ao gerar senha aleatória (urandom/python/openssl)
 #   SAU-302  | Falha ao gerar hash SHA-512 da senha (openssl/python crypt)
+#   SAU-403  | Nenhum UID livre na faixa configurada (ANSIBLE_UID_MIN-MAX)
 #   SAU-401  | Chave pública SSH não configurada no script
 #   SAU-501  | Configuração do sshd ficou inválida (sshd -t falhou)
 #   SAU-601  | Arquivo sudoers gerado é inválido (visudo -cf falhou)
@@ -37,6 +38,8 @@ SSHD_CONFIG="/etc/ssh/sshd_config"
 SSHD_DROP_IN_DIR="/etc/ssh/sshd_config.d"
 SSHD_DROP_IN="${SSHD_DROP_IN_DIR}/99-ansible-user.conf"
 PASSWORD_LENGTH=64
+ANSIBLE_UID_MIN=900
+ANSIBLE_UID_MAX=910
 
 # "rhel_only" = apenas Red Hat Enterprise Linux
 # "rhel_like" = RHEL e derivados (CentOS, Rocky, AlmaLinux, Oracle Linux)
@@ -214,13 +217,32 @@ else:
     printf '%s' "$pw"
 }
 
+resolve_uid() {
+    local uid
+    for uid in $(seq "${ANSIBLE_UID_MIN}" "${ANSIBLE_UID_MAX}"); do
+        if ! getent passwd "$uid" &>/dev/null; then
+            printf '%s' "$uid"
+            return 0
+        fi
+    done
+    die "SAU-403" "Nenhum UID livre encontrado na faixa ${ANSIBLE_UID_MIN}-${ANSIBLE_UID_MAX}." \
+        "Todos os UIDs entre ${ANSIBLE_UID_MIN} e ${ANSIBLE_UID_MAX} já estão em uso neste servidor." \
+        "UIDs ocupados:" \
+        "$(for u in $(seq "${ANSIBLE_UID_MIN}" "${ANSIBLE_UID_MAX}"); do getent passwd "$u" 2>/dev/null | awk -F: '{printf "  UID %s → %s\n", $3, $1}'; done)" \
+        "" \
+        "Para resolver, libere um UID nessa faixa ou altere ANSIBLE_UID_MIN/MAX no script."
+}
+
 create_user() {
-    local password password_hash
+    local password password_hash ansible_uid
 
     if id "${ANSIBLE_USER}" &>/dev/null; then
-        log "Usuário '${ANSIBLE_USER}' já existe. Pulando criação."
+        log "Usuário '${ANSIBLE_USER}' já existe (UID $(id -u "${ANSIBLE_USER}")). Pulando criação."
         return 0
     fi
+
+    ansible_uid=$(resolve_uid)
+    log "UID selecionado: ${ansible_uid} (faixa ${ANSIBLE_UID_MIN}-${ANSIBLE_UID_MAX})"
 
     log "Criando usuário '${ANSIBLE_USER}'..."
     password=$(generate_password)
@@ -254,6 +276,8 @@ except (ImportError, AttributeError):
     fi
 
     ${SUDO} useradd \
+        --system \
+        --uid "${ansible_uid}" \
         --create-home \
         --home-dir "${ANSIBLE_HOME}" \
         --shell /bin/bash \
@@ -263,7 +287,7 @@ except (ImportError, AttributeError):
 
     ${SUDO} passwd -l "${ANSIBLE_USER}" >/dev/null 2>&1
 
-    log "Usuário '${ANSIBLE_USER}' criado com senha aleatória de ${PASSWORD_LENGTH} caracteres."
+    log "Usuário '${ANSIBLE_USER}' criado com UID ${ansible_uid} e senha aleatória de ${PASSWORD_LENGTH} caracteres."
     log "Login por senha DESABILITADO (conta bloqueada). Acesso somente via chave SSH."
 }
 
