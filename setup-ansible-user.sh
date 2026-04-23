@@ -42,7 +42,7 @@ PASSWORD_LENGTH=64
 # "rhel_like" = RHEL e derivados (CentOS, Rocky, AlmaLinux, Oracle Linux)
 DISTRO_MODE="rhel_only"
 
-SSH_PUBLIC_KEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI_SUBSTITUA_PELA_SUA_CHAVE_PUBLICA ansible@automation"
+SSH_PUBLIC_KEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIApRB8kWM8+6nsKUvAuoW9v4ywfB54OrGH+oHjrm9Tev ansible-user-key"
 
 # ============================================================================
 # FUNÇÕES AUXILIARES
